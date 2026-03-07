@@ -1,0 +1,10 @@
+server:
+  port: 8090
+
+
+oj:
+  judge:
+    # Thư mục giả lập MinIO (chứa đề bài và testcase)
+    testcases-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\oj-testcases
+    # Thư mục tạm để code của user
+    work-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox
