@@ -39,7 +39,8 @@ public class JudgeServiceImpl implements JudgeService {
 
     @Override
     public String judge(JudgeSdi sdi) {
-        String submissionId = UUID.randomUUID().toString();
+        String submissionId = sdi.getSubmissionId().toString();
+
         Path hostTestcaseDir = Paths.get(testcasesDir, sdi.getProblemId().toString());
         Path hostWorkDir = Paths.get(workDir, "submissions", submissionId);
 
@@ -52,41 +53,23 @@ public class JudgeServiceImpl implements JudgeService {
 
             Files.createDirectories(hostWorkDir);
 
-            String fileName = "";
-            String compileCmd = null;
-            String runCmdTemplate = "";
-            long timeLimitMs = 2000; // Mặc định C++ là 2000ms (2s)
-
-            switch (sdi.getLanguageKey().toUpperCase()) {
-                case "CPP":
-                case "C++":
-                    fileName = "main.cpp";
-                    compileCmd = "g++ /sandbox/app/main.cpp -o /sandbox/app/main";
-                    runCmdTemplate = "/sandbox/app/main < /testcases/%s > /sandbox/app/%s";
-                    break;
-                case "JAVA":
-                    fileName = "Main.java";
-                    compileCmd = "javac /sandbox/app/Main.java";
-                    runCmdTemplate = "cd /sandbox/app && java Main < /testcases/%s > %s";
-                    timeLimitMs = 4000; // Java cần x2 thời gian để khởi động máy ảo JVM
-                    break;
-                case "PYTHON":
-                    fileName = "main.py";
-                    runCmdTemplate = "python3 /sandbox/app/main.py < /testcases/%s > /sandbox/app/%s";
-                    timeLimitMs = 5000; // Python thông dịch nên cho hẳn x2.5 thời gian
-                    break;
-                default:
-                    return "System Error: Unsupported language";
-            }
-
-            Path sourceFile = hostWorkDir.resolve(fileName);
+            // Ghi file source code dựa vào tên sourceName do Core chỉ định
+            Path sourceFile = hostWorkDir.resolve(sdi.getSourceName());
             Files.writeString(sourceFile, sdi.getSourceCode());
+
+            // --- ÁP DỤNG MEMORY LIMIT ---
+            // Lấy Memory Limit (MB) từ Core, mặc định cho 256MB nếu Core không gửi hoặc gửi giá trị không hợp lệ
+            long memoryLimitMb = sdi.getMemoryLimitAllowance() != null && sdi.getMemoryLimitAllowance() > 0
+                    ? sdi.getMemoryLimitAllowance() : 256L;
+            long memoryLimitBytes = memoryLimitMb * 1024L * 1024L;
 
             HostConfig hostConfig = HostConfig.newHostConfig()
                     .withBinds(
                             new Bind(hostWorkDir.toAbsolutePath().toString(), new Volume("/sandbox/app")),
                             new Bind(hostTestcaseDir.toAbsolutePath().toString(), new Volume("/testcases"))
                     )
+                    .withMemory(memoryLimitBytes) // Ép Docker không được ăn quá số RAM quy định
+                    .withMemorySwap(memoryLimitBytes) // Chặn luôn swap (RAM ảo) để tránh lách luật
                     .withAutoRemove(true);
 
             CreateContainerResponse container = dockerClient.createContainerCmd("oj-sandbox:v1")
@@ -96,18 +79,22 @@ public class JudgeServiceImpl implements JudgeService {
 
             dockerClient.startContainerCmd(container.getId()).exec();
             String containerId = container.getId();
-            log.info("Started Sandbox: {}", containerId);
+            log.info("Started Sandbox for Submission {}: {} with {}MB RAM", submissionId, containerId, memoryLimitMb);
 
-            // Giai đoạn Biên dịch (Compile)
-            if (compileCmd != null) {
-                ExecResult compileResult = executeCommandInContainer(containerId, compileCmd, 10000); // Cho build tối đa 10s
-                if (compileResult.isTle || compileResult.exitCode != 0) {
-                    dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-                    return "Verdict: CE (Compile Error) | Score: 0/100";
+            // 1. Giai đoạn Biên dịch (Sử dụng isCompiled để Check an toàn)
+            if (sdi.isCompiled() && sdi.getCompileCommand() != null) {
+                String compileCmd = sdi.getCompileCommand().trim();
+                if (!compileCmd.isEmpty()) {
+                    // Ép thời gian build cố định là 15 giây (15000ms), đủ thoải mái cho Java/C++
+                    ExecResult compileResult = executeCommandInContainer(containerId, compileCmd, 15000);
+                    if (compileResult.isTle || compileResult.exitCode != 0) {
+                        dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+                        return "Verdict: CE (Compile Error) | Score: 0/100";
+                    }
                 }
             }
 
-            // Giai đoạn Chấm điểm (Grade)
+            // 2. Giai đoạn Chấm điểm
             int totalScore = 0;
             long maxExecutionTime = 0;
             String finalVerdict = "AC";
@@ -117,12 +104,10 @@ public class JudgeServiceImpl implements JudgeService {
                 String outFileName = testCase.getOutputName();
                 String userOutName = "user_" + outFileName;
 
-                String runCmd = String.format(runCmdTemplate, inFileName, userOutName);
+                // Dùng thẳng template và time limit từ Core
+                String runCmd = String.format(sdi.getRunCommand(), inFileName, userOutName);
+                ExecResult result = executeCommandInContainer(containerId, runCmd, sdi.getTimeLimitAllowance());
 
-                // Chạy lệnh với Time Limit tương ứng của ngôn ngữ
-                ExecResult result = executeCommandInContainer(containerId, runCmd, timeLimitMs);
-
-                // 1. Check TLE (Lặp vô hạn)
                 if (result.isTle) {
                     finalVerdict = "TLE (Time Limit Exceeded) at " + inFileName;
                     break;
@@ -130,22 +115,18 @@ public class JudgeServiceImpl implements JudgeService {
 
                 maxExecutionTime = Math.max(maxExecutionTime, result.timeTaken);
 
-                // 2. Check RE (Crash, Chia cho 0, Tràn mảng...)
                 if (result.exitCode != 0) {
                     finalVerdict = "RE (Runtime Error) at " + inFileName + " [Exit Code: " + result.exitCode + "]";
                     break;
                 }
 
-                // 3. Check WA (Sai đáp án)
                 Path userOutputPath = hostWorkDir.resolve(userOutName);
                 Path expectedOutputPath = hostTestcaseDir.resolve(outFileName);
 
                 if (Files.exists(userOutputPath)) {
-                    // Đọc nguyên bản file lên
                     String userOutput = Files.readString(userOutputPath);
                     String expectedOutput = Files.readString(expectedOutputPath);
 
-                    // Đưa qua máy lọc để chuẩn hóa rồi mới so sánh
                     if (checkAnswer(userOutput, expectedOutput)) {
                         totalScore += testCase.getScore();
                         log.info("Testcase {} AC! Time: {}ms", inFileName, result.timeTaken);
@@ -159,7 +140,10 @@ public class JudgeServiceImpl implements JudgeService {
                 }
             }
 
+            // Dọn dẹp
             dockerClient.removeContainerCmd(containerId).withForce(true).exec();
+
+            // Tạm thời vẫn return String để test Postman, sau này ghép RabbitMQ sẽ đổi thành bắn Message
             return String.format("Verdict: %s | Score: %d/100 | Max Time: %d ms", finalVerdict, totalScore, maxExecutionTime);
 
         } catch (Exception e) {
