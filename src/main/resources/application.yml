@@ -1,10 +1,29 @@
 server:
   port: 8090
 
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+minio:
+  # LƯU Ý: Ở Java code tôi viết là minio.url, nên ở đây ta dùng url cho đồng bộ nhé
+  endpoint: http://${MINIO_HOST:localhost}:${MINIO_API_PORT:9000}
+  access-key: ${MINIO_ROOT_USER:minioadmin}
+  secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
 
 oj:
   judge:
-    # Thư mục giả lập MinIO (chứa đề bài và testcase)
-    testcases-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\oj-testcases
-    # Thư mục tạm để code của user
-    work-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox
+    # 1. Thư mục làm việc cho Docker (chứa file code .cpp, .java của user)
+    work-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\work-dir
+
+    # 2. Thư mục Cache để tải testcase từ MinIO về
+    cache-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\testcases-cache
+
+  storage:
+    minio:
+      bucket-testcase: ${MINIO_BUCKET_TESTCASE:oj-testcases}
+      prefix-problem: problems
+      suffix-testcase: testcases

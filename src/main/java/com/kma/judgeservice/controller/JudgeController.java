@@ -1,5 +1,6 @@
 package com.kma.judgeservice.controller;
 
+import com.kma.judgeservice.dto.JudgeResultSdi;
 import com.kma.judgeservice.dto.JudgeSdi;
 import com.kma.judgeservice.service.JudgeService;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +17,7 @@ public class JudgeController {
     private final JudgeService judgeService;
 
     @PostMapping("/submit")
-    public String submitCode(@RequestBody JudgeSdi sdi) {
+    public JudgeResultSdi submitCode(@RequestBody JudgeSdi sdi) {
         return judgeService.judge(sdi);
     }
 }
