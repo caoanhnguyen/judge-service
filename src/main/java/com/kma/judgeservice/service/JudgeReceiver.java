@@ -21,7 +21,7 @@ public class JudgeReceiver {
         log.info("[JUDGE] Đã nhận được yêu cầu chấm bài cho Submission: {}", sdi.getSubmissionId());
 
         try {
-            // 1. GỌI MÁY CHẤM THẬT (Đã bao gồm tải MinIO và chạy Docker)
+            // 1. GỌI MÁY CHẤM
             JudgeResultSdi finalResult = judgeService.judge(sdi);
 
             // 2. Gửi kết quả về lại Core

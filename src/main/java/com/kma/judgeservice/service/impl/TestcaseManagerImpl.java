@@ -1,14 +1,17 @@
 package com.kma.judgeservice.service.impl;
 
 import com.kma.judgeservice.service.TestcaseManager;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.util.FileSystemUtils; // Import cái này để xóa thư mục cho tiện
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -24,56 +27,79 @@ public class TestcaseManagerImpl implements TestcaseManager {
 
     private final MinioClient minioClient;
 
-    @Value("${oj.judge.cache-dir}")
-    private String cacheDir;
-
     @Value("${oj.storage.minio.bucket-testcase}")
     private String bucketName;
 
-    /**
-     * Trả về đường dẫn thư mục chứa testcase.
-     * Có cache thì dùng cache, không có thì tự tải về từ MinIO!
-     */
-    @Override
+    @Value("${oj.judge.cache-dir}")
+    private String cacheDir;
+
+    @Value("${oj.storage.minio.prefix-problem:problems}")
+    private String prefixProblem;
+
+    @Value("${oj.storage.minio.suffix-testcase:testcases}")
+    private String suffixTestcase;
+
     public Path getOrDownloadTestcases(UUID problemId) {
         Path problemCacheDir = Paths.get(cacheDir, problemId.toString());
-        Path infoJsonPath = problemCacheDir.resolve("info.json");
-
-        // 1. KIỂM TRA CACHE (LOCAL HIT)
-        // Dấu hiệu nhận biết cache chuẩn là file info.json phải tồn tại
-        if (Files.exists(infoJsonPath)) {
-            log.info("Cache HIT: Đã có sẵn testcase cho Problem [{}] tại local", problemId);
-            return problemCacheDir;
-        }
-
-        // 2. CACHE MISS -> KÉO TỪ MINIO
-        log.info("Cache MISS: Đang tải testcase cho Problem [{}] từ MinIO...", problemId);
+        Path localInfoJsonPath = problemCacheDir.resolve("info.json");
+        String minioBasePath = prefixProblem + "/" + problemId + "/" + suffixTestcase;
         try {
-            // Tạo thư mục nếu chưa có
+            // 1: Lấy bản vân tay (info.json) mới nhất từ MinIO về RAM
+            log.info("Đang kiểm tra phiên bản testcase của Problem [{}]...", problemId);
+            String remoteInfoJson = getFileContentFromMinio(minioBasePath + "/info.json");
+
+            // 2: Kiểm tra đối chiếu với Cache local
+            boolean isCacheValid = false;
+            if (Files.exists(localInfoJsonPath)) {
+                String localInfoJson = Files.readString(localInfoJsonPath, StandardCharsets.UTF_8);
+                // Nếu 2 chuỗi JSON giống hệt nhau -> Không có sự thay đổi nào từ Moderator -> Cache vẫn còn giá trị sử dụng
+                if (remoteInfoJson.equals(localInfoJson)) {
+                    isCacheValid = true;
+                }
+            }
+
+            // 3: Quyết định sử dụng Cache hay tải lại
+            if (isCacheValid) {
+                log.info("Cache HIT: Bộ testcase vẫn là bản mới nhất, dùng local cache!");
+                return problemCacheDir;
+            }
+
+            // --- NẾU CACHE BẨN HOẶC CHƯA CÓ CACHE ---
+            log.info("Cache MISS hoặc ĐÃ CŨ: Tiến hành dọn dẹp và tải lại từ MinIO...");
+
+            // XÓA SẠCH thư mục cũ (nếu có), sau đó tạo lại thư mục mới
+            FileSystemUtils.deleteRecursively(problemCacheDir);
             Files.createDirectories(problemCacheDir);
 
-            String minioBasePath = "problems/" + problemId + "/testcases";
+            // Ghi file info.json mới nhất xuống ổ cứng
+            Files.writeString(localInfoJsonPath, remoteInfoJson, StandardCharsets.UTF_8);
 
-            // 2.1 Tải file info.json
-            downloadFile(minioBasePath + "/info.json", infoJsonPath);
-
-            // 2.2 Tải file testcases.zip
+            // Tải file testcases.zip
             Path zipPath = problemCacheDir.resolve("testcases.zip");
             downloadFile(minioBasePath + "/testcases.zip", zipPath);
 
-            // 3. GIẢI NÉN VÀ DỌN RÁC
-            log.info("Đang giải nén testcases...");
+            // Giải nén và dọn rác Zip
+            log.info("Đang giải nén bộ testcase mới...");
             unzip(zipPath, problemCacheDir);
-
-            // Xóa cái file .zip đi cho nhẹ ổ cứng
             Files.deleteIfExists(zipPath);
 
-            log.info("Hoàn tất tải và giải nén testcase cho Problem [{}]", problemId);
+            log.info("Hoàn tất cập nhật bộ testcase chuẩn cho Problem [{}]", problemId);
             return problemCacheDir;
 
         } catch (Exception e) {
-            log.error("Lỗi cmnr khi tải testcase từ MinIO cho bài [{}]", problemId, e);
-            throw new RuntimeException("Không thể chuẩn bị testcase: " + e.getMessage());
+            log.error("Lỗi khi chuẩn bị testcase từ MinIO cho bài [{}]", problemId, e);
+            throw new RuntimeException("Lỗi hệ thống lưu trữ testcase: " + e.getMessage());
+        }
+    }
+
+    // --- CÁC HÀM ULTILITY ---
+    private String getFileContentFromMinio(String objectName) throws Exception {
+        try (InputStream is = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(objectName)
+                        .build())) {
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
@@ -92,12 +118,9 @@ public class TestcaseManagerImpl implements TestcaseManager {
             ZipEntry zipEntry = zis.getNextEntry();
             while (zipEntry != null) {
                 Path newFilePath = destDirectory.resolve(zipEntry.getName());
-
-                // Tránh bẫy "Zip Slip" vulnerability (bảo mật cực kỳ quan trọng)
                 if (!newFilePath.normalize().startsWith(destDirectory.normalize())) {
                     throw new IOException("Bad zip entry: " + zipEntry.getName());
                 }
-
                 if (!zipEntry.isDirectory()) {
                     Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
                 }
