@@ -3,24 +3,35 @@ server:
 
 spring:
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 minio:
-  # LƯU Ý: Ở Java code tôi viết là minio.url, nên ở đây ta dùng url cho đồng bộ nhé
   endpoint: http://${MINIO_HOST:localhost}:${MINIO_API_PORT:9000}
   access-key: ${MINIO_ROOT_USER:minioadmin}
   secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
 
 oj:
   judge:
-    # 1. Thư mục làm việc cho Docker (chứa file code .cpp, .java của user)
-    work-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\work-dir
+    # 1. Thư mục Host làm việc cho Docker (chứa code user nộp)
+    work-dir: ${JUDGE_WORK_DIR:D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\work-dir}
 
-    # 2. Thư mục Cache để tải testcase từ MinIO về
-    cache-dir: D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\testcases-cache
+    # 2. Thư mục Host Cache để tải testcase từ MinIO về
+    cache-dir: ${JUDGE_CACHE_DIR:D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\testcases-cache}
+
+    container:
+      # Container Name
+      image-name: ${CONTAINER_IMAGE_NAME:oj-sandbox:v1}
+      # Thư mục gốc chứa code bên trong Docker
+      work-dir: ${CONTAINER_WORK_DIR:/sandbox/app}
+      # Thư mục chứa đề bài/testcase bên trong Docker
+      testcase-dir: ${CONTAINER_TESTCASE_DIR:/testcases}
+      # Giới hạn dung lượng file output tối đa (ulimit -f). Tính bằng KB. 32768 = 32MB
+      max-output-kb: ${CONTAINER_MAX_OUTPUT_KB:32768}
+      # Giới hạn dung lượng file output để Java check OLE. Tính bằng MB.
+      max-output-mb: ${CONTAINER_MAX_OUTPUT_MB:31}
 
   storage:
     minio:
