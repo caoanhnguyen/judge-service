@@ -32,6 +32,8 @@ oj:
       max-output-kb: ${CONTAINER_MAX_OUTPUT_KB:32768}
       # Giới hạn dung lượng file output để Java check OLE. Tính bằng MB.
       max-output-mb: ${CONTAINER_MAX_OUTPUT_MB:31}
+      # Giới hạn PID
+      pids-limit: ${CONTAINER_PIDS_LIMIT:64}
 
   storage:
     minio:
