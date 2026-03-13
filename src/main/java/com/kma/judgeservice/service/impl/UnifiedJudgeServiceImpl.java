@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.FileSystemUtils;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,8 +44,11 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     @Value("${oj.judge.container.max-output-mb}")
     private int maxOutputMb;
 
+    @Value("${oj.judge.container.compile-timeout-ms}")
+    private long compileTimeoutMs;
+
     // =========================================================================
-    // LUỒNG 1: IMPLEMENTS JudgeService (Chấm bài Submit)
+    // Chức năng SUBMIT
     // =========================================================================
     @Override
     public JudgeResultSdi judge(JudgeSdi sdi) {
@@ -90,7 +94,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                 String containerInPath = containerTestcaseDir + "/" + inFileName;
                 String containerOutPath = containerWorkDir + "/" + userOutName;
                 Path userOutputPath = hostWorkDir.resolve(userOutName);
-                Path expectedOutputPath = hostTestcaseDir.resolve(outFileName); // 🌟 Truyền file output chuẩn vào
+                Path expectedOutputPath = hostTestcaseDir.resolve(outFileName);
 
                 // GỌI HÀM DÙNG CHUNG
                 TestCaseResult internalResult = evaluateSingleTestCase(
@@ -126,7 +130,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     }
 
     // =========================================================================
-    // LUỒNG 2: IMPLEMENTS RunCodeService (Chạy thử code)
+    // Chức năng RUN CODE
     // =========================================================================
     @Override
     public RunCodeResponse executeCustomRun(RunCodeRequest request) {
@@ -207,10 +211,18 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     // CÁC HÀM XỬ LÝ DÙNG CHUNG (TÁI SỬ DỤNG LOGIC)
     // =========================================================================
 
-    // DTO nội bộ bọc kết quả 1 testcase
+    // DTO bọc kết quả 1 testcase
     private static class TestCaseResult {
-        String verdict; String errorMessage; String actualOutput; long timeTakenMs;
-        public TestCaseResult(String v, String e, String o, long t) { verdict = v; errorMessage = e; actualOutput = o; timeTakenMs = t; }
+        String verdict;
+        String errorMessage;
+        String actualOutput;
+        long timeTakenMs;
+        public TestCaseResult(String verdict, String errorMessage, String actualOutput, long timeTakenMs) {
+            this.verdict = verdict;
+            this.errorMessage = errorMessage;
+            this.actualOutput = actualOutput;
+            this.timeTakenMs = timeTakenMs;
+        }
     }
 
     /**
@@ -219,7 +231,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     private TestCaseResult evaluateSingleTestCase(
             String containerId, String baseCmd, String containerInPath, String containerOutPath,
             Path hostUserOutputPath, Path expectedOutputFile, String expectedOutputString,
-            long timeLimitMs, long memoryLimitMb) {
+            long timeLimitMs, long memoryLimitMb) throws IOException {
 
         if (baseCmd.contains("{memory_limit}")) baseCmd = baseCmd.replace("{memory_limit}", String.valueOf(memoryLimitMb));
         if (!baseCmd.contains("%s")) baseCmd += " < %s > %s";
@@ -271,9 +283,12 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
         return new TestCaseResult(currentVerdict, errorMessage, actualOutput, result.timeTaken);
     }
 
+    /**
+     * Hàm xử lý biên dịch nếu cần thiết. Trả về null nếu compile thành công hoặc không cần compile, ngược lại trả về message lỗi để trả về cho người dùng.
+     */
     private String handleCompilation(String containerId, boolean isCompiled, String compileCmd) {
         if (isCompiled && compileCmd != null && !compileCmd.trim().isEmpty()) {
-            DockerExecutionHelper.ExecResult compileResult = dockerHelper.executeCommand(containerId, compileCmd.trim(), 15000);
+            DockerExecutionHelper.ExecResult compileResult = dockerHelper.executeCommand(containerId, compileCmd.trim(), compileTimeoutMs);
             if (compileResult.isTle || compileResult.exitCode != 0) {
                 return compileResult.outputLog.trim();
             }
@@ -281,6 +296,9 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
         return null; // Null nghĩa là compile thành công (hoặc không cần compile)
     }
 
+    /**
+     * Hàm so sánh output của user với output chuẩn, bỏ qua khoảng trắng cuối dòng và chuẩn hóa newline để tránh lỗi do khác hệ điều hành.
+     */
     private boolean checkAnswer(String userOut, String expectedOut) {
         if (userOut == null || expectedOut == null) return false;
         String normalizedUser = userOut.replaceAll("(?m)[ \\t]+$", "").replace("\r\n", "\n").trim();
@@ -288,7 +306,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
         return normalizedUser.equals(normalizedExpected);
     }
 
-    // Các hàm build result cũ giữ nguyên...
+    // Các hàm build result
     private JudgeResultSdi buildResult(JudgeSdi sdi, String status, String verdict, int score, int passed, int total, long time, long memory, String error) {
         return JudgeResultSdi.builder().submissionId(sdi.getSubmissionId()).submissionStatus(status).submissionVerdict(verdict).score(score).passedTestCount(passed).totalTestCount(total).executionTimeMs(time).executionMemoryMb(memory).errorMessage(error).build();
     }
