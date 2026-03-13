@@ -34,6 +34,15 @@ oj:
       max-output-mb: ${CONTAINER_MAX_OUTPUT_MB:31}
       # Giới hạn PID
       pids-limit: ${CONTAINER_PIDS_LIMIT:64}
+      # Giới hạn thời gian compile
+      compile-timeout-ms: ${COMPILE_TIMEOUT_MS:15000}
+      # Giới hạn CPU
+      cpus: ${JUDGE_CONTAINER_CPUS:1.0}
+      # Read only rootfs
+      readonly-rootfs: ${JUDGE_CONTAINER_READONLY_ROOTFS:true}
+      # Drop capabilities (ví dụ: NET_ADMIN, SYS_ADMIN, IPC_LOCK, etc.) để tăng cường bảo mật
+      drop-caps: ${JUDGE_CONTAINER_DROP_CAPS:true}
+
 
   storage:
     minio:
