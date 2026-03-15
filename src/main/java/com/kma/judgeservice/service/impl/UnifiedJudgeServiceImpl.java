@@ -24,7 +24,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
 
-    // 🌟 Tiêm anh bạn Helper gánh còng lưng lõi Docker vào đây
     private final DockerExecutionHelper dockerHelper;
     private final ObjectMapper objectMapper;
     private final TestcaseManager testcaseManager;

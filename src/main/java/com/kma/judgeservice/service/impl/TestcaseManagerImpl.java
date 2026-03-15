@@ -117,12 +117,22 @@ public class TestcaseManagerImpl implements TestcaseManager {
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipFilePath))) {
             ZipEntry zipEntry = zis.getNextEntry();
             while (zipEntry != null) {
-                Path newFilePath = destDirectory.resolve(zipEntry.getName());
-                if (!newFilePath.normalize().startsWith(destDirectory.normalize())) {
-                    throw new IOException("Bad zip entry: " + zipEntry.getName());
-                }
+                // 1. Bỏ qua tất cả các thư mục, ta chỉ quan tâm đến CÁC FILE
                 if (!zipEntry.isDirectory()) {
-                    Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+
+                    // 2. Móc lấy CÁI TÊN FILE CỤ THỂ, vứt bỏ toàn bộ đường dẫn cha bên trong ZIP
+                    // Ví dụ: "Welcome To Java/1.in" -> Lấy đúng "1.in"
+                    String fileName = Paths.get(zipEntry.getName()).getFileName().toString();
+
+                    // Chặn mấy cái file rác ẩn do MacOS tự động sinh ra khi nén ZIP
+                    if (!fileName.startsWith("._") && !fileName.equals(".DS_Store") && !zipEntry.getName().contains("__MACOSX")) {
+
+                        // 3. Ép file bung ra thẳng thư mục gốc của Problem
+                        Path newFilePath = destDirectory.resolve(fileName);
+
+                        // Copy đè dữ liệu
+                        Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+                    }
                 }
                 zipEntry = zis.getNextEntry();
             }
