@@ -12,6 +12,6 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class RunTestCaseSdi {
 
-    String input;
+    String rawInput;
     String expectedOutput; // Mang gía trị null nếu là custom input
 }

@@ -162,7 +162,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
 
             for (int i = 0; i < testCases.size(); i++) {
                 RunTestCaseSdi tc = testCases.get(i);
-                String rawInput = tc.getInput() != null ? tc.getInput() : "";
+                String rawInput = tc.getRawInput() != null ? tc.getRawInput() : "";
                 String expectedOutputString = tc.getExpectedOutput(); // 🌟 Lấy string output mong đợi
 
                 String inFileName = "custom_" + i + ".in";
