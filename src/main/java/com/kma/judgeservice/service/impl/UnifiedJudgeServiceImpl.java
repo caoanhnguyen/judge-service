@@ -84,6 +84,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             long maxExecutionTime = 0;
             String finalVerdict = "AC";
             boolean isAcmMode = sdi.getRuleType() == null || sdi.getRuleType().equalsIgnoreCase("ACM");
+            long maxMemoryUsedKb = 0;
 
             for (TestCaseInfo testCase : problemInfo.getTestCases()) {
                 String inFileName = testCase.getInputName();
@@ -101,7 +102,9 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                         userOutputPath, expectedOutputPath, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
                 );
 
+                // 🌟 CHỈNH SỬA: Cập nhật Time và RAM lớn nhất thực tế
                 maxExecutionTime = Math.max(maxExecutionTime, internalResult.timeTakenMs);
+                maxMemoryUsedKb = Math.max(maxMemoryUsedKb, internalResult.memoryUsedKb);
 
                 if (internalResult.verdict.equals("AC")) {
                     totalScore += testCase.getScore();
@@ -117,7 +120,9 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                 }
             }
 
-            return buildResult(sdi, "COMPLETED", finalVerdict, totalScore, passedTestCount, problemInfo.getTestCases().size(), maxExecutionTime, memoryLimitMb, finalErrorMessage);
+            // 🌟 CHỈNH SỬA: Đổi KB sang MB để trả về đúng bộ nhớ tiêu thụ thực tế thay vì limit
+            long finalMemoryMb = maxMemoryUsedKb / 1024;
+            return buildResult(sdi, "COMPLETED", finalVerdict, totalScore, passedTestCount, problemInfo.getTestCases().size(), maxExecutionTime, finalMemoryMb, finalErrorMessage);
 
         } catch (Exception e) {
             log.error("Judge system exception", e);
@@ -191,7 +196,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                         .expectedOutput(expectedOutputString)
                         .verdict(internalResult.verdict)
                         .errorMessage(internalResult.errorMessage)
-                        .timeTakenMs(internalResult.timeTakenMs)
+                        .timeTakenMs(internalResult.timeTakenMs) // Time chuẩn
                         .build());
             }
 
@@ -210,17 +215,20 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     // CÁC HÀM XỬ LÝ DÙNG CHUNG (TÁI SỬ DỤNG LOGIC)
     // =========================================================================
 
-    // DTO bọc kết quả 1 testcase
+    // 🌟 CHỈNH SỬA: Thêm trường memoryUsedKb vào DTO nội bộ
     private static class TestCaseResult {
         String verdict;
         String errorMessage;
         String actualOutput;
         long timeTakenMs;
-        public TestCaseResult(String verdict, String errorMessage, String actualOutput, long timeTakenMs) {
+        long memoryUsedKb;
+
+        public TestCaseResult(String verdict, String errorMessage, String actualOutput, long timeTakenMs, long memoryUsedKb) {
             this.verdict = verdict;
             this.errorMessage = errorMessage;
             this.actualOutput = actualOutput;
             this.timeTakenMs = timeTakenMs;
+            this.memoryUsedKb = memoryUsedKb;
         }
     }
 
@@ -279,7 +287,8 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             }
         }
 
-        return new TestCaseResult(currentVerdict, errorMessage, actualOutput, result.timeTaken);
+        // 🌟 CHỈNH SỬA: Dùng executionTime và memoryUsedKb lấy từ DockerExecutionHelper
+        return new TestCaseResult(currentVerdict, errorMessage, actualOutput, result.timeTaken, result.memoryUsedKb);
     }
 
     /**
