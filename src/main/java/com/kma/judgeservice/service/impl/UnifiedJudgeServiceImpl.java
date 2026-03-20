@@ -9,10 +9,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 import org.springframework.util.FileSystemUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -94,15 +96,16 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                 String containerInPath = containerTestcaseDir + "/" + inFileName;
                 String containerOutPath = containerWorkDir + "/" + userOutName;
                 Path userOutputPath = hostWorkDir.resolve(userOutName);
-                Path expectedOutputPath = hostTestcaseDir.resolve(outFileName);
+
+                // Truyền thẳng MD5 chuẩn thay vì truyền đường dẫn file
+                String expectedMd5 = testCase.getStrippedOutputMd5();
 
                 // GỌI HÀM DÙNG CHUNG
                 TestCaseResult internalResult = evaluateSingleTestCase(
                         containerId, sdi.getRunCommand(), containerInPath, containerOutPath,
-                        userOutputPath, expectedOutputPath, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
+                        userOutputPath, expectedMd5, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
                 );
 
-                // 🌟 CHỈNH SỬA: Cập nhật Time và RAM lớn nhất thực tế
                 maxExecutionTime = Math.max(maxExecutionTime, internalResult.timeTakenMs);
                 maxMemoryUsedKb = Math.max(maxMemoryUsedKb, internalResult.memoryUsedKb);
 
@@ -120,7 +123,6 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                 }
             }
 
-            // 🌟 CHỈNH SỬA: Đổi KB sang MB để trả về đúng bộ nhớ tiêu thụ thực tế thay vì limit
             long finalMemoryMb = maxMemoryUsedKb / 1024;
             return buildResult(sdi, "COMPLETED", finalVerdict, totalScore, passedTestCount, problemInfo.getTestCases().size(), maxExecutionTime, finalMemoryMb, finalErrorMessage);
 
@@ -168,18 +170,18 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             for (int i = 0; i < testCases.size(); i++) {
                 RunTestCaseSdi tc = testCases.get(i);
                 String rawInput = tc.getRawInput() != null ? tc.getRawInput() : "";
-                String expectedOutputString = tc.getExpectedOutput(); // 🌟 Lấy string output mong đợi
+                String expectedOutputString = tc.getExpectedOutput();
 
                 String inFileName = "custom_" + i + ".in";
                 String outFileName = "custom_" + i + ".out";
 
-                Files.writeString(hostWorkDir.resolve(inFileName), rawInput); // Ghi input xuống file
+                Files.writeString(hostWorkDir.resolve(inFileName), rawInput);
 
                 String containerInPath = containerWorkDir + "/" + inFileName;
                 String containerOutPath = containerWorkDir + "/" + outFileName;
                 Path userOutputPath = hostWorkDir.resolve(outFileName);
 
-                // GỌI HÀM DÙNG CHUNG
+                // GỌI HÀM DÙNG CHUNG (Với Run Code thì truyền null cho MD5, dùng String truyền thống)
                 TestCaseResult internalResult = evaluateSingleTestCase(
                         containerId, request.getRunCommand(), containerInPath, containerOutPath,
                         userOutputPath, null, expectedOutputString, request.getFinalTimeLimitMs(), memoryLimitMb
@@ -196,7 +198,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                         .expectedOutput(expectedOutputString)
                         .verdict(internalResult.verdict)
                         .errorMessage(internalResult.errorMessage)
-                        .timeTakenMs(internalResult.timeTakenMs) // Time chuẩn
+                        .timeTakenMs(internalResult.timeTakenMs)
                         .build());
             }
 
@@ -215,7 +217,6 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
     // CÁC HÀM XỬ LÝ DÙNG CHUNG (TÁI SỬ DỤNG LOGIC)
     // =========================================================================
 
-    // 🌟 CHỈNH SỬA: Thêm trường memoryUsedKb vào DTO nội bộ
     private static class TestCaseResult {
         String verdict;
         String errorMessage;
@@ -237,24 +238,23 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
      */
     private TestCaseResult evaluateSingleTestCase(
             String containerId, String baseCmd, String containerInPath, String containerOutPath,
-            Path hostUserOutputPath, Path expectedOutputFile, String expectedOutputString,
+            Path hostUserOutputPath, String expectedOutputMd5, String expectedOutputString,
             long timeLimitMs, long memoryLimitMb) throws IOException {
 
         if (baseCmd.contains("{memory_limit}")) baseCmd = baseCmd.replace("{memory_limit}", String.valueOf(memoryLimitMb));
         if (!baseCmd.contains("%s")) baseCmd += " < %s > %s";
-        baseCmd = "ulimit -f " + maxOutputKb + "; " + baseCmd; // Bọc ulimit
+        baseCmd = "ulimit -f " + maxOutputKb + "; " + baseCmd;
 
         String runCmd = String.format(baseCmd, containerInPath, containerOutPath);
         DockerExecutionHelper.ExecResult result = dockerHelper.executeCommand(containerId, runCmd, timeLimitMs);
 
-        String currentVerdict = "SUCCESS"; // Mặc định cho custom run không có expected
+        String currentVerdict = "SUCCESS";
         String errorMessage = null;
         String actualOutput = "";
 
         long maxOutputSizeBytes = (long) maxOutputMb * 1024 * 1024L;
         long actualOutputSize = Files.exists(hostUserOutputPath) ? Files.size(hostUserOutputPath) : 0;
 
-        // BẮT BỆNH THEO ƯU TIÊN
         if (actualOutputSize >= maxOutputSizeBytes || result.outputLog.contains("File size limit exceeded")) {
             currentVerdict = "OLE"; errorMessage = "Output Limit Exceeded";
         } else if (result.isTle) {
@@ -264,22 +264,22 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
         } else if (result.exitCode != 0) {
             currentVerdict = "RE"; errorMessage = result.outputLog.trim();
         } else {
-            // NẾU CODE CHẠY MƯỢT -> XỬ LÝ OUTPUT VÀ SO SÁNH
+            // NẾU CODE CHẠY MƯỢT -> SO SÁNH (CHECK ANSWER)
             try {
                 if (Files.exists(hostUserOutputPath)) {
                     actualOutput = Files.readString(hostUserOutputPath);
                 }
 
-                String expectedOut = null;
-                // Trường hợp 1: Chấm bài Submit (đọc từ file của hệ thống)
-                if (expectedOutputFile != null && Files.exists(expectedOutputFile)) {
-                    expectedOut = Files.readString(expectedOutputFile);
-                    currentVerdict = checkAnswer(actualOutput, expectedOut) ? "AC" : "WA";
+                // Chấm bài Submit (Dùng MD5 siêu tốc, không cần đọc toàn bộ output vào bộ nhớ nếu quá lớn, chỉ cần băm MD5 trên container)
+                if (expectedOutputMd5 != null && !expectedOutputMd5.trim().isEmpty()) {
+                    String normalizedUser = actualOutput.replaceAll("(?m)[ \\t]+$", "").replace("\r\n", "\n").trim();
+                    String userOutMd5 = DigestUtils.md5DigestAsHex(normalizedUser.getBytes(StandardCharsets.UTF_8));
+
+                    currentVerdict = userOutMd5.equals(expectedOutputMd5) ? "AC" : "WA";
                 }
                 // Trường hợp 2: Run Code Example (Frontend gửi kèm string expected)
                 else if (expectedOutputString != null && !expectedOutputString.trim().isEmpty()) {
-                    expectedOut = expectedOutputString;
-                    currentVerdict = checkAnswer(actualOutput, expectedOut) ? "AC" : "WA";
+                    currentVerdict = checkAnswer(actualOutput, expectedOutputString) ? "AC" : "WA";
                 }
                 // Trường hợp 3: Run Code Custom -> currentVerdict vẫn giữ nguyên là "SUCCESS"
             } catch (Exception e) {
@@ -287,13 +287,9 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             }
         }
 
-        // 🌟 CHỈNH SỬA: Dùng executionTime và memoryUsedKb lấy từ DockerExecutionHelper
         return new TestCaseResult(currentVerdict, errorMessage, actualOutput, result.timeTaken, result.memoryUsedKb);
     }
 
-    /**
-     * Hàm xử lý biên dịch nếu cần thiết. Trả về null nếu compile thành công hoặc không cần compile, ngược lại trả về message lỗi để trả về cho người dùng.
-     */
     private String handleCompilation(String containerId, boolean isCompiled, String compileCmd) {
         if (isCompiled && compileCmd != null && !compileCmd.trim().isEmpty()) {
             DockerExecutionHelper.ExecResult compileResult = dockerHelper.executeCommand(containerId, compileCmd.trim(), compileTimeoutMs);
@@ -301,12 +297,9 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
                 return compileResult.outputLog.trim();
             }
         }
-        return null; // Null nghĩa là compile thành công (hoặc không cần compile)
+        return null;
     }
 
-    /**
-     * Hàm so sánh output của user với output chuẩn, bỏ qua khoảng trắng cuối dòng và chuẩn hóa newline để tránh lỗi do khác hệ điều hành.
-     */
     private boolean checkAnswer(String userOut, String expectedOut) {
         if (userOut == null || expectedOut == null) return false;
         String normalizedUser = userOut.replaceAll("(?m)[ \\t]+$", "").replace("\r\n", "\n").trim();
@@ -314,10 +307,10 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
         return normalizedUser.equals(normalizedExpected);
     }
 
-    // Các hàm build result
     private JudgeResultSdi buildResult(JudgeSdi sdi, String status, String verdict, int score, int passed, int total, long time, long memory, String error) {
         return JudgeResultSdi.builder().submissionId(sdi.getSubmissionId()).submissionStatus(status).submissionVerdict(verdict).score(score).passedTestCount(passed).totalTestCount(total).executionTimeMs(time).executionMemoryMb(memory).errorMessage(error).build();
     }
+
     private JudgeResultSdi buildFailedResult(JudgeSdi sdi, String errorMessage) {
         return JudgeResultSdi.builder().submissionId(sdi.getSubmissionId()).submissionStatus("FAILED").submissionVerdict("SE").errorMessage(errorMessage).build();
     }
