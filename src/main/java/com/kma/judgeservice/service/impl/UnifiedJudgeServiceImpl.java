@@ -1,7 +1,8 @@
 package com.kma.judgeservice.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kma.judgeservice.dto.*;
+import com.kma.judgeservice.dto.requests.*;
+import com.kma.judgeservice.dto.responses.*;
 import com.kma.judgeservice.service.JudgeService;
 import com.kma.judgeservice.service.RunCodeService;
 import com.kma.judgeservice.service.TestcaseManager;
@@ -87,44 +88,93 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             String finalVerdict = "AC";
             boolean isAcmMode = sdi.getRuleType() == null || sdi.getRuleType().equalsIgnoreCase("ACM");
             long maxMemoryUsedKb = 0;
+            
+            int totalTestCount = 0;
 
-            for (TestCaseInfo testCase : problemInfo.getTestCases()) {
-                String inFileName = testCase.getInputName();
-                String outFileName = testCase.getOutputName();
-                String userOutName = "user_" + outFileName;
+            if (problemInfo.getSubtasks() != null && !problemInfo.getSubtasks().isEmpty()) {
+                // ================= CHẾ ĐỘ SUBTASK =================
+                totalTestCount = problemInfo.getSubtasks().stream().mapToInt(s -> s.getTestCases().size()).sum();
+                
+                for (SubtaskInfo subtask : problemInfo.getSubtasks()) {
+                    boolean subtaskPassed = true;
+                    for (TestCaseInfo testCase : subtask.getTestCases()) {
+                        String inFileName = testCase.getInputName();
+                        String outFileName = testCase.getOutputName();
+                        String userOutName = "user_" + outFileName;
 
-                String containerInPath = containerTestcaseDir + "/" + inFileName;
-                String containerOutPath = containerWorkDir + "/" + userOutName;
-                Path userOutputPath = hostWorkDir.resolve(userOutName);
+                        String containerInPath = containerTestcaseDir + "/" + inFileName;
+                        String containerOutPath = containerWorkDir + "/" + userOutName;
+                        Path userOutputPath = hostWorkDir.resolve(userOutName);
 
-                // Truyền thẳng MD5 chuẩn thay vì truyền đường dẫn file
-                String expectedMd5 = testCase.getStrippedOutputMd5();
+                        String expectedMd5 = testCase.getStrippedOutputMd5();
 
-                // GỌI HÀM DÙNG CHUNG
-                TestCaseResult internalResult = evaluateSingleTestCase(
-                        containerId, sdi.getRunCommand(), containerInPath, containerOutPath,
-                        userOutputPath, expectedMd5, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
-                );
+                        TestCaseResult internalResult = evaluateSingleTestCase(
+                                containerId, sdi.getRunCommand(), containerInPath, containerOutPath,
+                                userOutputPath, expectedMd5, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
+                        );
 
-                maxExecutionTime = Math.max(maxExecutionTime, internalResult.timeTakenMs);
-                maxMemoryUsedKb = Math.max(maxMemoryUsedKb, internalResult.memoryUsedKb);
+                        maxExecutionTime = Math.max(maxExecutionTime, internalResult.timeTakenMs);
+                        maxMemoryUsedKb = Math.max(maxMemoryUsedKb, internalResult.memoryUsedKb);
 
-                if (internalResult.verdict.equals("AC")) {
-                    totalScore += testCase.getScore();
-                    passedTestCount++;
-                } else {
-                    if (finalVerdict.equals("AC")) {
-                        finalVerdict = internalResult.verdict;
-                        finalErrorMessage = internalResult.errorMessage;
+                        if (internalResult.verdict.equals("AC")) {
+                            passedTestCount++;
+                        } else {
+                            subtaskPassed = false;
+                            if (finalVerdict.equals("AC")) {
+                                finalVerdict = internalResult.verdict;
+                                finalErrorMessage = internalResult.errorMessage;
+                            }
+                            // Tính toán break/short-circuit
+                            break;
+                        }
                     }
-                    if (isAcmMode) {
-                        totalScore = 0; break;
+                    if (subtaskPassed) {
+                        totalScore += subtask.getScore();
+                    } else if (isAcmMode) {
+                        totalScore = 0;
+                        break;
+                    }
+                }
+            } else if (problemInfo.getTestCases() != null) {
+                // ================= CHẾ ĐỘ THƯỜNG (Legacy) =================
+                totalTestCount = problemInfo.getTestCases().size();
+                
+                for (TestCaseInfo testCase : problemInfo.getTestCases()) {
+                    String inFileName = testCase.getInputName();
+                    String outFileName = testCase.getOutputName();
+                    String userOutName = "user_" + outFileName;
+
+                    String containerInPath = containerTestcaseDir + "/" + inFileName;
+                    String containerOutPath = containerWorkDir + "/" + userOutName;
+                    Path userOutputPath = hostWorkDir.resolve(userOutName);
+
+                    String expectedMd5 = testCase.getStrippedOutputMd5();
+
+                    TestCaseResult internalResult = evaluateSingleTestCase(
+                            containerId, sdi.getRunCommand(), containerInPath, containerOutPath,
+                            userOutputPath, expectedMd5, null, sdi.getFinalTimeLimitMs(), memoryLimitMb
+                    );
+
+                    maxExecutionTime = Math.max(maxExecutionTime, internalResult.timeTakenMs);
+                    maxMemoryUsedKb = Math.max(maxMemoryUsedKb, internalResult.memoryUsedKb);
+
+                    if (internalResult.verdict.equals("AC")) {
+                        totalScore += testCase.getScore();
+                        passedTestCount++;
+                    } else {
+                        if (finalVerdict.equals("AC")) {
+                            finalVerdict = internalResult.verdict;
+                            finalErrorMessage = internalResult.errorMessage;
+                        }
+                        if (isAcmMode) {
+                            totalScore = 0; break;
+                        }
                     }
                 }
             }
 
             long finalMemoryMb = maxMemoryUsedKb / 1024;
-            return buildResult(sdi, "COMPLETED", finalVerdict, totalScore, passedTestCount, problemInfo.getTestCases().size(), maxExecutionTime, finalMemoryMb, finalErrorMessage);
+            return buildResult(sdi, "COMPLETED", finalVerdict, totalScore, passedTestCount, totalTestCount, maxExecutionTime, finalMemoryMb, finalErrorMessage);
 
         } catch (Exception e) {
             log.error("Judge system exception", e);

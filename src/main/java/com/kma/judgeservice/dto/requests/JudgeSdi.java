@@ -1,4 +1,4 @@
-package com.kma.judgeservice.dto;
+package com.kma.judgeservice.dto.requests;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;

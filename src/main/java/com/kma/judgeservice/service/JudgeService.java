@@ -1,7 +1,7 @@
 package com.kma.judgeservice.service;
 
-import com.kma.judgeservice.dto.JudgeResultSdi;
-import com.kma.judgeservice.dto.JudgeSdi;
+import com.kma.judgeservice.dto.requests.JudgeResultSdi;
+import com.kma.judgeservice.dto.requests.JudgeSdi;
 
 public interface JudgeService {
 

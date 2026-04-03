@@ -1,10 +1,10 @@
 package com.kma.judgeservice.service;
 
 import com.kma.judgeservice.config.RabbitMQConfig;
-import com.kma.judgeservice.dto.JudgeResultSdi;
-import com.kma.judgeservice.dto.JudgeSdi;
-import com.kma.judgeservice.dto.RunCodeRequest;
-import com.kma.judgeservice.dto.RunCodeResponse;
+import com.kma.judgeservice.dto.requests.JudgeResultSdi;
+import com.kma.judgeservice.dto.requests.JudgeSdi;
+import com.kma.judgeservice.dto.requests.RunCodeRequest;
+import com.kma.judgeservice.dto.responses.RunCodeResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;

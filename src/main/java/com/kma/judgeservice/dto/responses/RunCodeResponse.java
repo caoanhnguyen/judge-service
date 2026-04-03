@@ -1,4 +1,4 @@
-package com.kma.judgeservice.dto;
+package com.kma.judgeservice.dto.responses;
 
 import lombok.AccessLevel;
 import lombok.Builder;
