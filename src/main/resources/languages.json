@@ -1,0 +1,62 @@
+[
+  {
+    "languageKey": "C",
+    "displayName": "C (gcc 11.4)",
+    "aceMode": "c_cpp",
+    "compileCommand": "gcc -O3 main.c -o main -lm",
+    "runCommand": "./main < %s > %s",
+    "isCompiled": true,
+    "sourceName": "main.c",
+    "exeName": "main",
+    "timeMultiplier": 1.0,
+    "memoryMultiplier": 1.0,
+    "memoryLimitAllowance": 0,
+    "timeLimitAllowance": 0,
+    "dockerImageName": "devassess-judge-cpp:latest"
+  },
+  {
+    "languageKey": "CPP",
+    "displayName": "C++ (g++ 11.4)",
+    "aceMode": "c_cpp",
+    "compileCommand": "g++ -O3 main.cpp -o main",
+    "runCommand": "./main < %s > %s",
+    "isCompiled": true,
+    "sourceName": "main.cpp",
+    "exeName": "main",
+    "timeMultiplier": 1.0,
+    "memoryMultiplier": 1.0,
+    "memoryLimitAllowance": 0,
+    "timeLimitAllowance": 0,
+    "dockerImageName": "devassess-judge-cpp:latest"
+  },
+  {
+    "languageKey": "JAVA",
+    "displayName": "Java 21 (OpenJDK)",
+    "aceMode": "java",
+    "compileCommand": "javac Main.java",
+    "runCommand": "java -Xss64M -Xmx256M Main < %s > %s",
+    "isCompiled": true,
+    "sourceName": "Main.java",
+    "exeName": "Main.class",
+    "timeMultiplier": 2.0,
+    "memoryMultiplier": 2.0,
+    "memoryLimitAllowance": 32,
+    "timeLimitAllowance": 1000,
+    "dockerImageName": "devassess-judge-java:latest"
+  },
+  {
+    "languageKey": "PYTHON3",
+    "displayName": "Python 3.12",
+    "aceMode": "python",
+    "compileCommand": "python3 -m py_compile main.py",
+    "runCommand": "python3 main.py < %s > %s",
+    "isCompiled": false,
+    "sourceName": "main.py",
+    "exeName": "main.py",
+    "timeMultiplier": 3.0,
+    "memoryMultiplier": 1.5,
+    "memoryLimitAllowance": 64,
+    "timeLimitAllowance": 2000,
+    "dockerImageName": "devassess-judge-python:latest"
+  }
+]

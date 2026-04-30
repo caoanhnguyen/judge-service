@@ -5,6 +5,7 @@ import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.model.*;
+import com.kma.judgeservice.utils.LanguageDockerImageMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,8 +22,10 @@ public class DockerExecutionHelper {
 
     private final DockerClient dockerClient;
 
-    @Value("${oj.judge.container.image-name:oj-sandbox:v1}")
-    private String dockerImageName;
+//    @Value("${oj.judge.container.image-name:oj-sandbox:v1}")
+//    private String dockerImageName;
+
+    private final LanguageDockerImageMapper imageMapper;
 
     @Value("${oj.judge.container.work-dir}")
     private String containerWorkDir;
@@ -66,9 +69,17 @@ public class DockerExecutionHelper {
      * @param memoryLimitMb Giới hạn RAM.
      * @return Container ID.
      */
-    public String startSandboxContainer(Path hostWorkDir, Path hostTestcaseDir, long memoryLimitMb) {
+    public String startSandboxContainer(Path hostWorkDir, Path hostTestcaseDir, long memoryLimitMb, String languageKey) {
         long memoryLimitBytes = memoryLimitMb * 1024L * 1024L;
         long nanoCpus = (long) (cpus * 1_000_000_000L); // Quy đổi từ số Core ra NanoCPUs cho Docker hiểu
+
+        String dockerImageName = imageMapper.getImageName(languageKey);
+
+        // Xử lý fallback hợp lý: Nếu không tìm thấy image, log error và throw exception dừng luôn!
+        if (dockerImageName == null) {
+            log.error("[JUDGE] No Docker image configured for language [{}] (Submission will not be judged)", languageKey);
+            throw new IllegalArgumentException("Language " + languageKey + " is not supported or not mapped to any Docker image.");
+        }
 
         List<Bind> binds = new ArrayList<>();
         binds.add(new Bind(hostWorkDir.toAbsolutePath().toString(), new Volume(containerWorkDir)));
@@ -86,7 +97,6 @@ public class DockerExecutionHelper {
                 .withReadonlyRootfs(readonlyRootfs)
                 .withAutoRemove(true);
 
-        // Riêng cái CapDrop nó nhận mảng, nên ta check if rồi gán
         if (dropCaps) {
             hostConfig.withCapDrop(Capability.ALL);
         }
@@ -155,7 +165,7 @@ public class DockerExecutionHelper {
             Long exitCodeLong = dockerClient.inspectExecCmd(execId).exec().getExitCodeLong();
             int exitCode = (exitCodeLong != null) ? exitCodeLong.intValue() : 0;
 
-            // 🌟 3. BÓC TÁCH KẾT QUẢ TỪ LOG BẰNG REGEX
+            // BÓC TÁCH KẾT QUẢ TỪ LOG BẰNG REGEX
             long measuredTimeMs = System.currentTimeMillis() - startTime; // Mặc định nếu không bóc được
             long memoryUsedKb = 0;
             String cleanLog = dockerLog.toString();

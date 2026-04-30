@@ -74,7 +74,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             long memoryLimitMb = sdi.getFinalMemoryLimitMb() != null && sdi.getFinalMemoryLimitMb() > 0 ? sdi.getFinalMemoryLimitMb() : 256L;
 
             // 2. Bật Docker
-            containerId = dockerHelper.startSandboxContainer(hostWorkDir, hostTestcaseDir, memoryLimitMb);
+            containerId = dockerHelper.startSandboxContainer(hostWorkDir, hostTestcaseDir, memoryLimitMb, sdi.getLanguageKey());
 
             // 3. Biên dịch
             String ceMessage = handleCompilation(containerId, sdi.isCompiled(), sdi.getCompileCommand());
@@ -203,7 +203,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
             long memoryLimitMb = request.getFinalMemoryLimitMb() != null && request.getFinalMemoryLimitMb() > 0 ? request.getFinalMemoryLimitMb() : 256L;
 
             // 1. Bật Docker (Không cần mount thư mục testcase)
-            containerId = dockerHelper.startSandboxContainer(hostWorkDir, null, memoryLimitMb);
+            containerId = dockerHelper.startSandboxContainer(hostWorkDir, null, memoryLimitMb, request.getLanguageKey());
 
             // 2. Biên dịch
             String ceMessage = handleCompilation(containerId, request.isCompiled(), request.getCompileCommand());
