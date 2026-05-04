@@ -70,6 +70,7 @@ public class UnifiedJudgeServiceImpl implements JudgeService, RunCodeService {
 
             Files.createDirectories(hostWorkDir);
             Files.writeString(hostWorkDir.resolve(sdi.getSourceName()), sdi.getSourceCode());
+            hostWorkDir.toFile().setWritable(true, false);
 
             long memoryLimitMb = sdi.getFinalMemoryLimitMb() != null && sdi.getFinalMemoryLimitMb() > 0 ? sdi.getFinalMemoryLimitMb() : 256L;
 

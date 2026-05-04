@@ -15,9 +15,10 @@ public class DockerConfig {
 
     @Bean
     public DockerClient dockerClient() {
-        // Trỏ tới Docker Desktop qua TCP (Nhớ bật Expose Daemon trong setting Docker Desktop)
+        // Trỏ tới Docker Desktop qua TCP (Nhớ bật Expose Daemon trong setting Docker Desktop) hoặc lấy từ environment variable khi deploy
+        String dockerHost = System.getenv().getOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock");
         DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                .withDockerHost("tcp://localhost:2375")
+                .withDockerHost(dockerHost)
                 .build();
 
         DockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
