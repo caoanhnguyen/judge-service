@@ -7,20 +7,20 @@ services:
     env_file:
       - .env
     environment:
-      # [THAY ĐỔI 1]: Sửa /mnt/d/ thành /host_mnt/d/
       - JUDGE_WORK_DIR=/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/work-dir
       - JUDGE_CACHE_DIR=/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/testcases-cache
       - MINIO_HOST=host.docker.internal
       - RABBITMQ_HOST=host.docker.internal
       - DOCKER_HOST=tcp://host.docker.internal:2375
       - SPRING_RABBITMQ_LISTENER_SIMPLE_PREFETCH=1
+      - JUDGE_CONTAINER_NO_NEW_PRIVILEGES=true
+      - JUDGE_CONTAINER_SECCOMP_PROFILE=
     volumes:
-      # [THAY ĐỔI 2]: Sửa lại đường dẫn đích trong container thành /host_mnt/d/...
       - D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\work-dir:/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/work-dir
       - D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\testcases-cache:/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/testcases-cache
+      - D:\KMA_Docs\Final_KMA\source_code\judge-service\seccomp:/host_mnt/d/KMA_Docs/Final_KMA/source_code/judge-service/seccomp:ro
     network_mode: "bridge"
 
-  # LÀM TƯƠNG TỰ VỚI judge-node-2
   judge-node-2:
     image: devassess/judge-service:latest
     container_name: judge-node-2
@@ -33,7 +33,10 @@ services:
       - RABBITMQ_HOST=host.docker.internal
       - DOCKER_HOST=tcp://host.docker.internal:2375
       - SPRING_RABBITMQ_LISTENER_SIMPLE_PREFETCH=1
+      - JUDGE_CONTAINER_NO_NEW_PRIVILEGES=true
+      - JUDGE_CONTAINER_SECCOMP_PROFILE=
     volumes:
       - D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\work-dir:/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/work-dir
       - D:\KMA_Docs\Final_KMA\source_code\oj-sandbox\testcases-cache:/host_mnt/d/KMA_Docs/Final_KMA/source_code/oj-sandbox/testcases-cache
+      - D:\KMA_Docs\Final_KMA\source_code\judge-service\seccomp:/host_mnt/d/KMA_Docs/Final_KMA/source_code/judge-service/seccomp:ro
     network_mode: "bridge"

@@ -35,13 +35,17 @@ oj:
       # Giới hạn PID
       pids-limit: ${CONTAINER_PIDS_LIMIT:64}
       # Giới hạn thời gian compile
-      compile-timeout-ms: ${COMPILE_TIMEOUT_MS:15000}
+      compile-timeout-ms: ${CONTAINER_COMPILE_TIMEOUT_MS:15000}
       # Giới hạn CPU
-      cpus: ${JUDGE_CONTAINER_CPUS:1.0}
+      cpus: ${CONTAINER_CPUS:1.0}
       # Read only rootfs
-      readonly-rootfs: ${JUDGE_CONTAINER_READONLY_ROOTFS:true}
+      readonly-rootfs: ${CONTAINER_READONLY_ROOTFS:true}
       # Drop capabilities (ví dụ: NET_ADMIN, SYS_ADMIN, IPC_LOCK, etc.) để tăng cường bảo mật
-      drop-caps: ${JUDGE_CONTAINER_DROP_CAPS:true}
+      drop-caps: ${CONTAINER_DROP_CAPS:true}
+      # Chặn tiến trình trong container nhận thêm đặc quyền qua setuid/setcap
+      no-new-privileges: ${JUDGE_CONTAINER_NO_NEW_PRIVILEGES:true}
+      # Seccomp profile custom. Để trống để dùng mặc định của Docker runtime.
+      seccomp-profile: ${JUDGE_CONTAINER_SECCOMP_PROFILE:}
 
 
   storage:

@@ -9,6 +9,7 @@ import com.kma.judgeservice.utils.LanguageDockerImageMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -44,6 +45,12 @@ public class DockerExecutionHelper {
 
     @Value("${oj.judge.container.drop-caps}")
     private boolean dropCaps;
+
+    @Value("${oj.judge.container.no-new-privileges:true}")
+    private boolean noNewPrivileges;
+
+    @Value("${oj.judge.container.seccomp-profile:}")
+    private String seccompProfile;
 
     // Object chứa thông số trả về từ Docker
     public static class ExecResult {
@@ -82,9 +89,9 @@ public class DockerExecutionHelper {
         }
 
         List<Bind> binds = new ArrayList<>();
-        binds.add(new Bind(hostWorkDir.toAbsolutePath().toString(), new Volume(containerWorkDir)));
+        binds.add(new Bind(hostWorkDir.toAbsolutePath().toString(), new Volume(containerWorkDir), AccessMode.rw));
         if (hostTestcaseDir != null) {
-            binds.add(new Bind(hostTestcaseDir.toAbsolutePath().toString(), new Volume(containerTestcaseDir)));
+            binds.add(new Bind(hostTestcaseDir.toAbsolutePath().toString(), new Volume(containerTestcaseDir), AccessMode.ro));
         }
 
         HostConfig hostConfig = HostConfig.newHostConfig()
@@ -99,6 +106,17 @@ public class DockerExecutionHelper {
 
         if (dropCaps) {
             hostConfig.withCapDrop(Capability.ALL);
+        }
+
+        List<String> securityOpts = new ArrayList<>();
+        if (noNewPrivileges) {
+            securityOpts.add("no-new-privileges=true");
+        }
+        if (StringUtils.hasText(seccompProfile)) {
+            securityOpts.add("seccomp=" + seccompProfile.trim());
+        }
+        if (!securityOpts.isEmpty()) {
+            hostConfig.withSecurityOpts(securityOpts);
         }
 
         CreateContainerResponse container = dockerClient.createContainerCmd(dockerImageName)
